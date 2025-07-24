@@ -64,7 +64,7 @@ COLORS = [
 ]
 
 def show_papers(papers, keywords, show_abstracts=False):
-    longest_conf = max([len(paper.conference) for paper in papers])
+    longest_conf = max([len(paper.conference) for paper in papers], default=0)
     for paper in papers:
         abstract = paper.abstract
         title = paper.title
