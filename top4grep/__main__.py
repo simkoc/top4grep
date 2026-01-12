@@ -57,6 +57,14 @@ def grep(keywords):
     papers = sorted(filter_paper, key=lambda paper: paper.year + CONFERENCES.index(paper.conference)/10, reverse=True)
     return papers
 
+def grep_regexp(regexp):
+    logger.info(regexp)
+    constraint = sqlalchemy.or_(Paper.title.op('REGEXP')(regexp), Paper.abstract.op('REGEXP')(regexp))
+    with Session() as session:
+        papers = session.query(Paper).filter(constraint).all()
+    papers = sorted(papers, key=lambda paper: paper.year + CONFERENCES.index(paper.conference)/10, reverse=True)
+    return papers
+
 COLORS = [
     "\033[91m", # red
     "\033[92m", # green
@@ -95,6 +103,7 @@ def main():
     parser = argparse.ArgumentParser(description='Scripts to query the paper database',
                                      usage="%(prog)s [options] -k <keywords>")
     parser.add_argument('-k', type=str, help="keywords to grep, separated by ','. For example, 'linux,kernel,exploit'", default='')
+    parser.add_argument('-r', type=str, help="keywords to regexp. For example, 'linux|kernel|exploit'", default='^$')
     parser.add_argument('--build-db', action="store_true", help="Builds the database of conference papers")
     parser.add_argument('--missing-abstract', action="store_true", help="List the papers that do not have abstracts")
     parser.add_argument('--abstracts', action="store_true", help="Involve abstract into the database's building or query (Need Chrome for building)")
@@ -117,6 +126,12 @@ def main():
         logger.debug(f"Found {len(papers)} papers")
 
         show_papers(papers,keywords,args.abstracts)
+    elif args.r:
+        assert DB_PATH.exists(), "need to build a paper database first to perform wanted queries"
+        regexp = args.r
+        papers = grep_regexp(regexp)
+        logger.debug(f"Found {len(papers)} papers")
+        show_papers(papers,[],args.abstracts)
     elif args.build_db:
         print("Building db...")
         try:
