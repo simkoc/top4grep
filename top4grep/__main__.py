@@ -39,7 +39,10 @@ def existed_in_tokens(tokens, keywords):
 
 def grep(keywords):
     # TODO: currently we only grep from title and abstract, also grep from other fields in the future maybe?
-    constraints = [sqlalchemy.or_(Paper.title.icontains(x), Paper.abstract.icontains(x)) for x in keywords]
+    #constraints = [sqlalchemy.or_(Paper.title.icontains(x), Paper.abstract.icontains(x)) for x in keywords]
+    logger.info(keywords)
+    constraints = [sqlalchemy.or_(Paper.title.regexp_match(x), Paper.abstract.regexp_match(x))]
+    logger.info(constraints)
 
     with Session() as session:
         papers = session.query(Paper).filter(*constraints).all()
@@ -103,10 +106,10 @@ def main():
 
     if args.k:
         assert DB_PATH.exists(), "need to build a paper database first to perform wanted queries"
-        keywords = [x.strip() for x in args.k.split(',')]
+        keywords = args.k #[x.strip() for x in args.k.split(',')]
         if keywords:
-            colored_keywords = [f"{c}{k}\033[00m" for (k,c) in zip_longest(keywords, COLORS, fillvalue="\033[96m") if k and k != "\033[96m"]
-            logger.info("Grep based on the following keywords: %s", ', '.join(colored_keywords))
+            #colored_keywords = [f"{c}{k}\033[00m" for (k,c) in zip_longest(keywords, COLORS, fillvalue="\033[96m") if k and k != "\033[96m"]
+            logger.info("Grep based on the following regexp: %s", keywords)
         else:
             logger.warning("No keyword is provided. Return all the papers.")
 

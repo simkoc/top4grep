@@ -2,5 +2,6 @@
 __pycache__
 *.egg-info
 venv
+.venv
 build/
 top4grep/data/
