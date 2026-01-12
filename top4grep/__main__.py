@@ -11,7 +11,6 @@ from . import DB_PATH, Session
 from .db import Paper
 from .utils import new_logger
 
-
 logger = new_logger("Top4Grep")
 stemmer = PorterStemmer()
 
@@ -37,22 +36,24 @@ def fuzzy_match(title):
 def existed_in_tokens(tokens, keywords):
     return all(map(lambda k: stemmer.stem(k.lower()) in tokens, keywords))
 
-def grep(keywords):
-    # TODO: currently we only grep from title and abstract, also grep from other fields in the future maybe?
-    #constraints = [sqlalchemy.or_(Paper.title.icontains(x), Paper.abstract.icontains(x)) for x in keywords]
-    logger.info(keywords)
-    constraints = [sqlalchemy.or_(Paper.title.regexp_match(x), Paper.abstract.regexp_match(x))]
-    logger.info(constraints)
-
-    with Session() as session:
-        papers = session.query(Paper).filter(*constraints).all()
-    
-    #check whether whether nltk tokenizer data is downloaded
-    check_and_download_punkt()
-
-    #tokenize the title and filter out the substring matches
-    filter_paper = filter(lambda p: existed_in_tokens(fuzzy_match(p.title.lower() + " " + p.abstract.lower()), keywords), papers)
-
+def grep(keywords, abstract):
+    # TODO: currently we only grep either from title or from abstract, also grep from other fields in the future maybe?
+    if abstract:
+        constraints = [Paper.abstract.contains(x) for x in keywords]
+        with Session() as session:
+            papers = session.query(Paper).filter(*constraints).all()
+        filter_paper = filter(lambda p: existed_in_tokens(fuzzy_match(p.abstract.lower()), keywords), papers)
+    else:
+        constraints = [Paper.title.contains(x) for x in keywords]
+        with Session() as session:
+            papers = session.query(Paper).filter(*constraints).all()
+        #check whether whether nltk tokenizer data is downloaded
+        check_and_download_punkt()
+        #tokenize the title and filter out the substring matches
+        filter_paper = []
+        for paper in papers:
+            if all([stemmer.stem(x.lower()) in fuzzy_match(paper.title.lower()) for x in keywords]):
+                filter_paper.append(paper)
     # perform customized sorthing
     papers = sorted(filter_paper, key=lambda paper: paper.year + CONFERENCES.index(paper.conference)/10, reverse=True)
     return papers
@@ -93,6 +94,40 @@ def show_papers(papers, keywords, show_abstracts=False):
             print(abstract.strip())
             print("")
 
+def show_papers_regexp(papers, regexp, show_abstracts=False):
+    longest_conf = max([len(paper.conference) for paper in papers], default=0)
+    for paper in papers:
+        abstract = paper.abstract
+        title = paper.title
+        offset = 0
+        for re_match in re.finditer(regexp, title):
+            if paper.url:
+                start = re_match.start(0) + offset
+                end = re_match.end(0) + offset
+                offset += len("\033[1;31m")
+                offset += len("\033[1;34m")
+                title = title[:start] + "\033[1;31m" + title[start:end] + "\033[1;34m" + title[end:]
+            else:
+                start = re_match.start(0) + offset
+                end = re_match.end(0) + offset
+                offset += len("\033[1;31m")
+                offset += len("\033[0m")
+                title = title[:start] + "\033[1;31m" + title[start:end] + "\033[0m" + title[end:]
+        offset = 0
+        for re_match in re.finditer(regexp, abstract):
+            start = re_match.start(0) + offset
+            end = re_match.end(0) + offset
+            offset += len("\033[1;31m")
+            offset += len("\033[0m")
+            abstract = abstract[:start] + "\033[1;31m" + abstract[start:end] + "\033[0m" + abstract[end:]
+        if paper.url:
+            ansi_link = f"\033[1;34m\033]8;;{paper.url}\a{title}\033]8;;\033[0m"
+        header = f"{paper.year}: {paper.conference:{longest_conf}s} - {ansi_link}"
+        print(header)
+        if show_abstracts and abstract:
+            print(abstract.strip())
+            print("")
+
 def list_missing_abstract():
     with Session() as session:
         papers = session.query(Paper).filter(Paper.abstract == "").all()
@@ -117,12 +152,12 @@ def main():
         assert DB_PATH.exists(), "need to build a paper database first to perform wanted queries"
         keywords = args.k #[x.strip() for x in args.k.split(',')]
         if keywords:
-            #colored_keywords = [f"{c}{k}\033[00m" for (k,c) in zip_longest(keywords, COLORS, fillvalue="\033[96m") if k and k != "\033[96m"]
-            logger.info("Grep based on the following regexp: %s", keywords)
+            colored_keywords = [f"{c}{k}\033[00m" for (k,c) in zip_longest(keywords, COLORS, fillvalue="\033[96m") if k and k != "\033[96m"]
+            logger.info("Grep based on the following keywords: %s", keywords)
         else:
             logger.warning("No keyword is provided. Return all the papers.")
 
-        papers = grep(keywords)
+        papers = grep(keywords, args.abstracts)
         logger.debug(f"Found {len(papers)} papers")
 
         show_papers(papers,keywords,args.abstracts)
@@ -131,7 +166,7 @@ def main():
         regexp = args.r
         papers = grep_regexp(regexp)
         logger.debug(f"Found {len(papers)} papers")
-        show_papers(papers,[],args.abstracts)
+        show_papers_regexp(papers,regexp,args.abstracts)
     elif args.build_db:
         print("Building db...")
         try:
