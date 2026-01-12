@@ -19,18 +19,13 @@ Make sure to install the database build requirements too when building/updating 
 
 ### Query
 ```bash
-top4grep -k <keywords>
+top4grep -r <regexps>
 ```
 
-For example, `python top4grep.py -k linux,kernel`
-Currently, the query is just a case-insensitive match (just like grep). The returned results must contains all the input keywords (papers containing keyword1 AND keyword2 AND ...). Support for `OR` operation (papers containing keyword1 OR keyword2) is missing, but will be added in the future.
+For example, `python top4grep.py -r linux|kernel`
+Currently, the query is a regexp. If you want to `and` concatenate multiple regexp you can do this via `#`, i.e., "linux#kernel" only matches title/abstracts where both words are contained.
 
-Add `--abstracts` to print the abstracts too.
+Add `--abstracts` to consider and print the abstracts too.
 
 ## Screenshot
 ![screenshot](https://raw.githubusercontent.com/Kyle-Kyle/top4grep/master/img/screenshot.png)
-
-## TODO
-- [x] grep in abstract
-- [ ] fuzzy match
-- [ ] complex search logic (`OR` operation)
