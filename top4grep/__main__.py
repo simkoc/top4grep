@@ -58,11 +58,14 @@ def grep(keywords, abstract):
     papers = sorted(filter_paper, key=lambda paper: paper.year + CONFERENCES.index(paper.conference)/10, reverse=True)
     return papers
 
-def grep_regexp(regexp):
-    logger.info(regexp)
-    constraint = sqlalchemy.or_(Paper.title.op('REGEXP')(regexp), Paper.abstract.op('REGEXP')(regexp))
+def grep_regexp(regexps, abstracts):
+    logger.info(regexps)
+    if abstracts:
+        constraints = [sqlalchemy.or_(Paper.title.op('REGEXP')(regexp), Paper.abstract.op('REGEXP')(regexp)) for regexp in regexps]
+    else:
+        constraints = [Paper.title.op('REGEXP')(regexp) for regexp in regexps]
     with Session() as session:
-        papers = session.query(Paper).filter(constraint).all()
+        papers = session.query(Paper).filter(*constraints).all()
     papers = sorted(papers, key=lambda paper: paper.year + CONFERENCES.index(paper.conference)/10, reverse=True)
     return papers
 
@@ -94,32 +97,33 @@ def show_papers(papers, keywords, show_abstracts=False):
             print(abstract.strip())
             print("")
 
-def show_papers_regexp(papers, regexp, show_abstracts=False):
+def show_papers_regexp(papers, regexps, show_abstracts=False):
     longest_conf = max([len(paper.conference) for paper in papers], default=0)
     for paper in papers:
         abstract = paper.abstract
         title = paper.title
-        offset = 0
-        for re_match in re.finditer(regexp, title):
-            if paper.url:
-                start = re_match.start(0) + offset
-                end = re_match.end(0) + offset
-                offset += len("\033[1;31m")
-                offset += len("\033[1;34m")
-                title = title[:start] + "\033[1;31m" + title[start:end] + "\033[1;34m" + title[end:]
-            else:
+        for regexp in regexps:
+            offset = 0
+            for re_match in re.finditer(regexp, title):
+                if paper.url:
+                    start = re_match.start(0) + offset
+                    end = re_match.end(0) + offset
+                    offset += len("\033[1;31m")
+                    offset += len("\033[1;34m")
+                    title = title[:start] + "\033[1;31m" + title[start:end] + "\033[1;34m" + title[end:]
+                else:
+                    start = re_match.start(0) + offset
+                    end = re_match.end(0) + offset
+                    offset += len("\033[1;31m")
+                    offset += len("\033[0m")
+                    title = title[:start] + "\033[1;31m" + title[start:end] + "\033[0m" + title[end:]
+            offset = 0
+            for re_match in re.finditer(regexp, abstract):
                 start = re_match.start(0) + offset
                 end = re_match.end(0) + offset
                 offset += len("\033[1;31m")
                 offset += len("\033[0m")
-                title = title[:start] + "\033[1;31m" + title[start:end] + "\033[0m" + title[end:]
-        offset = 0
-        for re_match in re.finditer(regexp, abstract):
-            start = re_match.start(0) + offset
-            end = re_match.end(0) + offset
-            offset += len("\033[1;31m")
-            offset += len("\033[0m")
-            abstract = abstract[:start] + "\033[1;31m" + abstract[start:end] + "\033[0m" + abstract[end:]
+                abstract = abstract[:start] + "\033[1;31m" + abstract[start:end] + "\033[0m" + abstract[end:]
         if paper.url:
             ansi_link = f"\033[1;34m\033]8;;{paper.url}\a{title}\033]8;;\033[0m"
         header = f"{paper.year}: {paper.conference:{longest_conf}s} - {ansi_link}"
@@ -137,8 +141,7 @@ def list_missing_abstract():
 def main():
     parser = argparse.ArgumentParser(description='Scripts to query the paper database',
                                      usage="%(prog)s [options] -k <keywords>")
-    parser.add_argument('-k', type=str, help="keywords to grep, separated by ','. For example, 'linux,kernel,exploit'", default='')
-    parser.add_argument('-r', type=str, help="keywords to regexp. For example, 'linux|kernel|exploit'", default='^$')
+    parser.add_argument('-r', type=str, help="keywords to regexp multiple (and concatenated) regexp separated by #. For example, 'linux|kernel|exploit#android|CVE'", default='^$')
     parser.add_argument('--build-db', action="store_true", help="Builds the database of conference papers")
     parser.add_argument('--missing-abstract', action="store_true", help="List the papers that do not have abstracts")
     parser.add_argument('--abstracts', action="store_true", help="Involve abstract into the database's building or query (Need Chrome for building)")
@@ -147,26 +150,14 @@ def main():
     if args.missing_abstract and not args.build_db:
         list_missing_abstract()
         return
-
-    if args.k:
-        assert DB_PATH.exists(), "need to build a paper database first to perform wanted queries"
-        keywords = args.k #[x.strip() for x in args.k.split(',')]
-        if keywords:
-            colored_keywords = [f"{c}{k}\033[00m" for (k,c) in zip_longest(keywords, COLORS, fillvalue="\033[96m") if k and k != "\033[96m"]
-            logger.info("Grep based on the following keywords: %s", keywords)
-        else:
-            logger.warning("No keyword is provided. Return all the papers.")
-
-        papers = grep(keywords, args.abstracts)
-        logger.debug(f"Found {len(papers)} papers")
-
-        show_papers(papers,keywords,args.abstracts)
-    elif args.r:
+    
+    if args.r:
+        regexps = args.r.split("#")
         assert DB_PATH.exists(), "need to build a paper database first to perform wanted queries"
         regexp = args.r
-        papers = grep_regexp(regexp)
+        papers = grep_regexp(regexps,args.abstracts)
+        show_papers_regexp(papers,regexps,args.abstracts)
         logger.debug(f"Found {len(papers)} papers")
-        show_papers_regexp(papers,regexp,args.abstracts)
     elif args.build_db:
         print("Building db...")
         try:
